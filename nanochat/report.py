@@ -40,26 +40,34 @@ def get_git_info():
 
 def get_gpu_info():
     """Get GPU information."""
-    if not torch.cuda.is_available():
-        return {"available": False}
+    if torch.backends.mps.is_available():
+        return {
+            "available": True,
+            "type": "mps",
+            "count": 1,
+            "names": ["Metal Performance Shaders"],
+            "memory_gb": [32.0]  # Approximate for M1 Pro
+        }
+    elif torch.cuda.is_available():
+        num_devices = torch.cuda.device_count()
+        info = {
+            "available": True,
+            "type": "cuda",
+            "count": num_devices,
+            "names": [],
+            "memory_gb": []
+        }
 
-    num_devices = torch.cuda.device_count()
-    info = {
-        "available": True,
-        "count": num_devices,
-        "names": [],
-        "memory_gb": []
-    }
+        for i in range(num_devices):
+            props = torch.cuda.get_device_properties(i)
+            info["names"].append(props.name)
+            info["memory_gb"].append(props.total_memory / (1024**3))
 
-    for i in range(num_devices):
-        props = torch.cuda.get_device_properties(i)
-        info["names"].append(props.name)
-        info["memory_gb"].append(props.total_memory / (1024**3))
-
-    # Get CUDA version
-    info["cuda_version"] = torch.version.cuda or "unknown"
-
-    return info
+        # Get CUDA version
+        info["cuda_version"] = torch.version.cuda or "unknown"
+        return info
+    else:
+        return {"available": False, "type": "cpu"}
 
 def get_system_info():
     """Get system information."""

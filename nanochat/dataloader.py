@@ -44,6 +44,8 @@ def tokenizing_distributed_data_loader(B, T, split, tokenizer_threads=4, tokeniz
         inputs_cpu = scratch[:-1].to(dtype=torch.int32)
         targets_cpu = scratch[1:]
         # Reshape to 2D and move to GPU async
-        inputs = inputs_cpu.view(B, T).to(device="cuda", dtype=torch.int32, non_blocking=True)
-        targets = targets_cpu.view(B, T).to(device="cuda", dtype=torch.int64, non_blocking=True)
+        # Get the current device from the model or use a default
+        device = torch.device("mps" if torch.backends.mps.is_available() else ("cuda" if torch.cuda.is_available() else "cpu"))
+        inputs = inputs_cpu.view(B, T).to(device=device, dtype=torch.int32, non_blocking=True)
+        targets = targets_cpu.view(B, T).to(device=device, dtype=torch.int64, non_blocking=True)
         yield inputs, targets

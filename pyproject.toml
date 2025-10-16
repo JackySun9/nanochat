@@ -22,16 +22,8 @@ dependencies = [
 requires = ["maturin>=1.7,<2.0"]
 build-backend = "maturin"
 
-# target torch to cuda 12.8
-[tool.uv.sources]
-torch = [
-    { index = "pytorch-cu128" },
-]
-
-[[tool.uv.index]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
-explicit = true
+# Use default PyTorch for MPS support (no CUDA-specific index needed)
+# MPS is included in the default PyTorch distribution
 
 [tool.maturin]
 module-name = "rustbpe"

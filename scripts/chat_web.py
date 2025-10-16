@@ -95,7 +95,12 @@ class WorkerPool:
     """Pool of workers, each with a model replica on a different GPU."""
 
     def __init__(self, num_gpus: Optional[int] = None):
-        self.num_gpus = num_gpus if num_gpus is not None else torch.cuda.device_count()
+        if torch.cuda.is_available():
+            self.num_gpus = num_gpus if num_gpus is not None else torch.cuda.device_count()
+        elif torch.backends.mps.is_available():
+            self.num_gpus = 1  # MPS only supports single device
+        else:
+            self.num_gpus = 1  # CPU fallback
         self.workers: List[Worker] = []
         self.available_workers: asyncio.Queue = asyncio.Queue()
 
@@ -104,12 +109,23 @@ class WorkerPool:
         print(f"Initializing worker pool with {self.num_gpus} GPUs...")
 
         for gpu_id in range(self.num_gpus):
-            device = torch.device(f"cuda:{gpu_id}")
+            if torch.cuda.is_available():
+                device = torch.device(f"cuda:{gpu_id}")
+            elif torch.backends.mps.is_available():
+                device = torch.device("mps")
+            else:
+                device = torch.device("cpu")
             print(f"Loading model on GPU {gpu_id}...")
 
             model, tokenizer, _ = load_model(source, device, phase="eval", model_tag=model_tag, step=step)
             engine = Engine(model, tokenizer)
-            autocast_ctx = torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16)
+            # Use appropriate autocast context based on device
+            device_type = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
+            if device_type == "mps":
+                # MPS doesn't support bfloat16, use float16 instead
+                autocast_ctx = torch.amp.autocast(device_type="mps", dtype=torch.float16)
+            else:
+                autocast_ctx = torch.amp.autocast(device_type=device_type, dtype=torch.bfloat16)
 
             worker = Worker(
                 gpu_id=gpu_id,

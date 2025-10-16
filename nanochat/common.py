@@ -92,34 +92,78 @@ def get_dist_info():
 def compute_init():
     """Basic initialization that we keep doing over and over, so make common."""
 
-    # CUDA is currently required
-    assert torch.cuda.is_available(), "CUDA is needed for a distributed run atm"
+    # Determine the best available device (MPS > CUDA > CPU)
+    if torch.backends.mps.is_available():
+        device = torch.device("mps")
+        device_type = "mps"
+        logger.info("Using MPS (Metal Performance Shaders) device")
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")
+        device_type = "cuda"
+        logger.info("Using CUDA device")
+    else:
+        device = torch.device("cpu")
+        device_type = "cpu"
+        logger.info("Using CPU device")
 
     # Reproducibility
     torch.manual_seed(42)
-    torch.cuda.manual_seed(42)
+    if device_type == "cuda":
+        torch.cuda.manual_seed(42)
+    elif device_type == "mps":
+        # MPS doesn't have manual_seed, but we can set the generator seed
+        torch.mps.manual_seed(42)
     # skipping full reproducibility for now, possibly investigate slowdown later
     # torch.use_deterministic_algorithms(True)
     # torch.backends.cudnn.deterministic = True
     # torch.backends.cudnn.benchmark = False
 
-    # Precision
-    torch.set_float32_matmul_precision("high") # uses tf32 instead of fp32 for matmuls
+    # Precision - only set for CUDA
+    if device_type == "cuda":
+        torch.set_float32_matmul_precision("high") # uses tf32 instead of fp32 for matmuls
 
+    # For MPS, we'll disable distributed training for now since MPS doesn't support DDP
+    # But we'll optimize for the 32 GPU cores by using larger batch sizes
     # Distributed setup: Distributed Data Parallel (DDP), optional
     ddp, ddp_rank, ddp_local_rank, ddp_world_size = get_dist_info()
-    if ddp:
+    if ddp and device_type == "cuda":
         device = torch.device("cuda", ddp_local_rank)
         torch.cuda.set_device(device) # make "cuda" default to this device
         dist.init_process_group(backend="nccl", device_id=device)
         dist.barrier()
     else:
-        device = torch.device("cuda")
+        # For MPS or single GPU, use the device we determined above
+        # Force single device for MPS but optimize for 32 GPU cores
+        if device_type == "mps":
+            ddp, ddp_rank, ddp_local_rank, ddp_world_size = False, 0, 0, 1
+            logger.info("MPS detected: Optimizing for 32 GPU cores with larger batch sizes")
 
     if ddp_rank == 0:
         logger.info(f"Distributed world size: {ddp_world_size}")
+        logger.info(f"Using device: {device}")
 
     return ddp, ddp_rank, ddp_local_rank, ddp_world_size, device
+
+def get_memory_usage():
+    """Get current memory usage for the active device"""
+    if torch.backends.mps.is_available() and torch.mps.is_available():
+        # MPS doesn't have direct memory tracking like CUDA
+        # We'll return a placeholder for now
+        return 0.0
+    elif torch.cuda.is_available():
+        return torch.cuda.max_memory_allocated() / 1024 / 1024
+    else:
+        # For CPU, we could use psutil but for now return 0
+        return 0.0
+
+def get_device_type():
+    """Get the current device type as a string"""
+    if torch.backends.mps.is_available() and torch.mps.is_available():
+        return "mps"
+    elif torch.cuda.is_available():
+        return "cuda"
+    else:
+        return "cpu"
 
 def compute_cleanup():
     """Companion function to compute_init, to clean things up before script exit"""

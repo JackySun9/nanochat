@@ -57,7 +57,13 @@ user_config = {k: globals()[k] for k in config_keys} # will be useful for loggin
 ddp, ddp_rank, ddp_local_rank, ddp_world_size, device = compute_init()
 master_process = ddp_rank == 0 # this process will do logging, checkpointing etc.
 dtype = torch.float32 if dtype == 'float32' else torch.bfloat16
-autocast_ctx = torch.amp.autocast(device_type="cuda", dtype=dtype)
+# Use appropriate autocast context based on device
+device_type = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
+if device_type == "mps":
+    # MPS doesn't support bfloat16, use float16 instead
+    autocast_ctx = torch.amp.autocast(device_type="mps", dtype=torch.float16)
+else:
+    autocast_ctx = torch.amp.autocast(device_type=device_type, dtype=dtype)
 
 # wandb logging init
 use_dummy_wandb = run == "dummy" or not master_process

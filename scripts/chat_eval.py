@@ -195,7 +195,13 @@ if __name__ == "__main__":
 
     ddp, ddp_rank, ddp_local_rank, ddp_world_size, device = compute_init()
     ptdtype = torch.float32 if args.dtype == 'float32' else torch.bfloat16
-    autocast_ctx = torch.amp.autocast(device_type="cuda", dtype=ptdtype)
+    # Use appropriate autocast context based on device
+    device_type = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
+    if device_type == "mps":
+        # MPS doesn't support bfloat16, use float16 instead
+        autocast_ctx = torch.amp.autocast(device_type="mps", dtype=torch.float16)
+    else:
+        autocast_ctx = torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 
     model, tokenizer, meta = load_model(args.source, device, phase="eval", model_tag=args.model_tag, step=args.step)
     engine = Engine(model, tokenizer)

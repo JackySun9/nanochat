@@ -122,7 +122,13 @@ def main():
 
     # distributed / precision setup
     ddp, ddp_rank, ddp_local_rank, ddp_world_size, device = compute_init()
-    autocast_ctx = torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16)
+    # Use appropriate autocast context based on device
+    device_type = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
+    if device_type == "mps":
+        # MPS doesn't support bfloat16, use float16 instead
+        autocast_ctx = torch.amp.autocast(device_type="mps", dtype=torch.float16)
+    else:
+        autocast_ctx = torch.amp.autocast(device_type=device_type, dtype=torch.bfloat16)
 
     # Load model and tokenizer from command line or from file system
     if len(sys.argv) >= 2:
